@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sankey Chart</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://officeapis.public.onecdn.static.microsoft/1/office.js"></script>
+  <script src="vendor/d3.min.js"></script>
+  <script src="vendor/d3-sankey.min.js"></script>
+  <script src="app.js"></script>
+</head>
+<body>
+  <div id="chart"></div>
+
+  <div id="toolbar">
+    <button id="btn-refresh" title="Odśwież">&#x27F3;</button>
+    <button id="btn-copy" title="Wstaw kopię jako obraz (np. do PowerPointa)">&#x1F5BC;</button>
+    <button id="btn-settings" title="Ustawienia: wybór tabel">&#x2699;</button>
+  </div>
+
+  <div id="banner" hidden></div>
+
+  <div id="message" hidden>
+    <div class="card">
+      <p id="msg-text"></p>
+      <p id="msg-hint" class="hint"></p>
+      <div id="msg-actions" class="actions">
+        <button id="msg-sample" class="primary">Utwórz dane przykładowe</button>
+        <button id="msg-settings">Wybierz tabele</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" hidden>
+    <div class="card">
+      <h3>Źródło danych tego wykresu</h3>
+      <label>Tabela przepływów (Source, Target, Value, Color)
+        <select id="sel-links"></select>
+      </label>
+      <label>Tabela węzłów (Node, Color, Note, Column, DisplayValue)
+        <select id="sel-nodes"></select>
+      </label>
+      <label>Tabela parametrów (Parameter, Value)
+        <select id="sel-config"></select>
+      </label>
+      <div class="actions">
+        <button id="btn-save" class="primary">Zapisz</button>
+        <button id="btn-cancel">Anuluj</button>
+        <button id="btn-sample">Utwórz dane przykładowe</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

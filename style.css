@@ -1,0 +1,145 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #fff;
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  color: #222;
+}
+
+#chart {
+  position: absolute;
+  inset: 0;
+}
+
+#chart svg {
+  display: block;
+}
+
+/* Pasek narzędzi widoczny po najechaniu myszą */
+#toolbar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+
+body:hover #toolbar,
+#toolbar:focus-within {
+  opacity: 1;
+}
+
+#toolbar button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  border: 1px solid #c8c6c4;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+#toolbar button:hover {
+  background: #f3f2f1;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#banner {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  right: 8px;
+  padding: 6px 10px;
+  background: rgba(33, 115, 70, 0.95);
+  color: #fff;
+  border-radius: 4px;
+  z-index: 6;
+}
+
+#message,
+#settings {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  z-index: 4;
+}
+
+#settings {
+  z-index: 7;
+}
+
+.card {
+  max-width: 440px;
+  width: calc(100% - 32px);
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e1dfdd;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+}
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.card p {
+  margin: 0 0 8px;
+}
+
+.hint {
+  color: #605e5c;
+}
+
+.card label {
+  display: block;
+  margin-bottom: 10px;
+  color: #444;
+}
+
+.card select {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 4px;
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.actions button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid #8a8886;
+  border-radius: 2px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.actions button.primary {
+  background: #217346;
+  border-color: #217346;
+  color: #fff;
+}
