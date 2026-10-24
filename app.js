@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  const VERSION = "2.0";
+  const VERSION = "2.1";
   const KEY_DATA = "sankeyBinding";
   const KEY_NODES = "sankeyNodesBinding";
   const KEY_FMT = "sankeyFormat";
@@ -221,10 +221,8 @@
         await ctx.sync();
         if (!old.isNullObject) old.delete();
       }
-      newId = "sankey-" + kind + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      if (tableName) ctx.workbook.bindings.addFromNamedItem(tableName, Excel.BindingType.table, newId);
-      else ctx.workbook.bindings.add(range, Excel.BindingType.range, newId);
-      await ctx.sync();
+      newId = newBindingId(kind);
+      await addBinding(ctx, range, tableName, newId);
     });
     if (!newId) return false;
     if (kind === "data") dataBindingId = newId;
@@ -247,6 +245,27 @@
     });
     await refresh();
     await subscribe();
+  }
+
+  function newBindingId(kind) {
+    return "sankey" + (kind === "data" ? "Data" : "Nodes") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  // Powiązanie z tabelą (rośnie z tabelą) jak w przykładach Microsoftu; gdy Excel odmówi, zwykły zakres
+  async function addBinding(ctx, range, tableName, id) {
+    if (tableName) {
+      try {
+        ctx.workbook.bindings.add(ctx.workbook.tables.getItem(tableName).getRange(), Excel.BindingType.table, id);
+        await ctx.sync();
+        return "Table";
+      } catch (e) {
+        console.warn("Powiązanie typu tabela nie powiodło się, używam zakresu", e);
+      }
+      range = ctx.workbook.tables.getItem(tableName).getRange();
+    }
+    ctx.workbook.bindings.add(range, Excel.BindingType.range, id);
+    await ctx.sync();
+    return "Range";
   }
 
   async function readBinding(ctx, id) {
@@ -352,9 +371,8 @@
         await ctx.sync();
         if (!old.isNullObject) old.delete();
       }
-      dataBindingId = "sankey-data-" + Date.now().toString(36);
-      ctx.workbook.bindings.addFromNamedItem(tableName, Excel.BindingType.table, dataBindingId);
-      await ctx.sync();
+      dataBindingId = newBindingId("data");
+      await addBinding(ctx, null, tableName, dataBindingId);
     });
     fmt = Object.assign(clone(DEFAULT_FMT), clone(SAMPLE_FMT));
     selectedNode = null;
@@ -973,7 +991,8 @@
       await fn();
     } catch (e) {
       console.error(e);
-      const msg = e && e.message ? e.message : String(e);
+      const loc = e && e.debugInfo && e.debugInfo.errorLocation ? " [" + e.debugInfo.errorLocation + "]" : "";
+      const msg = (e && e.message ? e.message : String(e)) + loc;
       showBanner("Błąd: " + msg, true);
       if (!soft && !lastSvg && !model) showEmpty();
     }
