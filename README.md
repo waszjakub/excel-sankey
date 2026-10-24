@@ -1,36 +1,36 @@
-# Sankey Chart: dodatek do Excela
+# Sankey Chart: dodatek do Excela (v2)
 
-Wykres Sankey osadzony w arkuszu (content add-in). Czyta dane z tabel Excela, odświeża się po każdej zmianie, a wygląd ustawiasz w tabeli parametrów.
+Wykres Sankey osadzony w arkuszu (content add-in). Działa jak zwykły wykres Excela: zaznaczasz dane, wstawiasz wykres, formatujesz w panelu bocznym.
 
-## Struktura
+## Jak używać
+
+1. Zaznacz dane: trzy kolumny **Źródło | Cel | Wartość** (opcjonalnie czwarta **Kolor** przepływu, np. `#B30000`). Nagłówki są opcjonalne. Wystarczy jedna komórka w tabeli albo w bloku danych.
+2. Home → Add-ins → **Sankey Chart**. Wykres sam podepnie się pod zaznaczenie.
+3. Najedź na wykres, żeby zobaczyć przyciski:
+   - ⟳ odśwież
+   - ▦ użyj bieżącego zaznaczenia jako danych (jak „Select Data”)
+   - 🎨 panel formatowania
+   - 🖼 wstaw kopię jako obraz (np. do PowerPointa)
+4. Kliknij węzeł na wykresie, żeby ustawić jego kolor, dopisek (np. „7% r/r”), kolumnę i wyświetlaną wartość.
+
+Dane z tabeli Excela rosną razem z tabelą. Zwykły zakres przesuwa się przy wstawianiu wierszy w jego środku, tak jak zakres danych zwykłego wykresu.
+
+**Zaawansowane:** w panelu można podpiąć drugi zakres z opisami węzłów liczonymi formułami: `Węzeł | Kolor | Dopisek | Kolumna | Wartość wyświetlana`. Ma pierwszeństwo przed ustawieniami z panelu.
+
+Każdy wstawiony wykres pamięta własne dane i formatowanie (zapisane w pliku).
+
+## Pliki
 
 | Plik | Rola |
 |---|---|
-| `index.html`, `app.js`, `style.css` | strona dodatku (to, co Excel wyświetla w obiekcie) |
+| `index.html`, `app.js`, `style.css` | strona dodatku |
 | `vendor/` | biblioteki D3 i d3-sankey (licencje w środku) |
-| `assets/` | ikony dodatku |
-| `manifest.xml` (osobno, nie w repo) | „wizytówka” dodatku dla Excela, wskazuje adres strony |
-
-## Instalacja
-
-1. Repozytorium publiczne o nazwie **excel-sankey**, pliki w katalogu głównym.
-2. Settings → Pages → Deploy from a branch → `main` / `(root)` → Save.
-3. Sprawdź `https://TWOJ-LOGIN.github.io/excel-sankey/`: powinien się pokazać wykres demo z napisem „Strona dodatku działa”.
-4. W `manifest.xml` zamień `TWOJ-LOGIN` na swój login GitHub.
-5. Excel na Windows: folder współdzielony z manifestem → File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs → Catalog Url `\\KOMPUTER\Folder` → Add catalog, zaznacz „Show in Menu” → OK → restart Excela → Home → Add-ins → Advanced → SHARED FOLDER → Sankey Chart → Add.
-6. Excel w przeglądarce (alternatywa): Home → Add-ins → More Settings → Upload My Add-in → `manifest.xml`.
-
-## Dane
-
-- **Przepływy** (wymagana): `Source | Target | Value | Color`. Pusty Color = kolor węzła docelowego.
-- **Węzły** (opcjonalna): `Node | Color | Note | Column | DisplayValue`. Kolejność wierszy = kolejność w kolumnie wykresu, `Column` wymusza kolumnę (od 0), `DisplayValue` nadpisuje liczbę w etykiecie.
-- **Parametry** (opcjonalna): `Parameter | Value | Opis`. Lista parametrów jest w danych przykładowych.
-
-Każdy wstawiony wykres pamięta własne tabele (⚙ w prawym górnym rogu obiektu). Wartości w tabelach mogą być formułami.
+| `assets/` | ikony |
+| `manifest.xml` (lokalnie, nie w repo) | wskazuje Excelowi adres strony |
 
 ## Aktualizacja kodu
 
-Po zmianie plików w repo GitHub Pages publikuje je w 1-2 minuty. Excel trzyma kopię w pamięci podręcznej: File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs → „Next time Office starts, clear all previously-started web add-ins cache” → restart Excela.
+Po wgraniu nowych plików GitHub Pages publikuje je w 1-2 minuty. Excel trzyma kopię w pamięci podręcznej: File → Options → Trust Center → Trust Center Settings → Trusted Add-in Catalogs → „Next time Office starts, clear all previously-started web add-ins cache” → restart Excela.
 
 ## Prywatność
 

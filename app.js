@@ -1,212 +1,283 @@
-/* Sankey Chart: content add-in dla Excela
-   Dane: tabela przepływów (Source | Target | Value | Color), opcjonalnie tabela węzłów
-   (Node | Color | Note | Column | DisplayValue) i tabela parametrów (Parameter | Value | Opis).
-   Każdy wstawiony wykres pamięta własne nazwy tabel (ustawienia dodatku w pliku). */
+/* Sankey Chart v2: content add-in dla Excela
+   Działa jak zwykły wykres: zaznacz dane (Źródło | Cel | Wartość | opcjonalnie Kolor) i wstaw dodatek.
+   Formatowanie w panelu bocznym, klik w węzeł otwiera jego ustawienia.
+   Każdy wstawiony wykres trzyma własne powiązanie z danymi i własne formatowanie (ustawienia w pliku). */
 (function () {
   "use strict";
 
-  const SETTINGS_KEY = "sankeyTables";
-  const DEFAULT_TABLES = { links: "SankeyLinks", nodes: "SankeyNodes", config: "SankeyConfig" };
+  const VERSION = "2.0";
+  const KEY_DATA = "sankeyBinding";
+  const KEY_NODES = "sankeyNodesBinding";
+  const KEY_FMT = "sankeyFormat";
 
-  // Parametry nadpisywane w tabeli parametrów. Typ wartości domyślnej = typ parametru.
-  const DEFAULTS = {
+  const PALETTES = {
+    office: ["#156082", "#E97132", "#196B24", "#0F9ED5", "#A02B93", "#4EA72E", "#4F81BD", "#C0504D"],
+    office2013: ["#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47", "#264478", "#9E480E"],
+    mono: ["#6B6B6B"],
+    pastel: ["#8FB9DE", "#F4B183", "#A9D18E", "#FFD966", "#C9A0DC", "#9DC3E6", "#F8CBAD", "#C5E0B4"]
+  };
+  const QUICK_COLORS = ["#6B6B6B", "#00A800", "#B30000", "#156082", "#E97132", "#0F9ED5", "#A02B93", "#FFC000"];
+
+  const DEFAULT_FMT = {
+    showTitle: false,
     title: "",
-    marginTop: 20,
-    marginRight: 130,
-    marginBottom: 30,
-    marginLeft: 130,
-    nodeWidth: 24,
-    nodePadding: 36,
-    nodeAlign: "left",
-    keepOrder: true,
-    iterations: 32,
-    linkOpacity: 0.45,
-    defaultNodeColor: "#6b6b6b",
-    background: "#ffffff",
-    fontFamily: "Segoe UI, Roboto, Arial, sans-serif",
-    fontSize: 12,
-    labelColor: "#222222",
-    labelBackground: true,
-    titleSize: 24,
-    titleColor: "#1f4e79",
+    titleSize: 22,
+    titleColor: "#1F4E79",
+    showValues: true,
     valuePrefix: "",
     valueSuffix: "",
     decimals: 1,
-    numberLocale: "en",
+    numberLocale: "pl",
+    palette: "office",
+    nodeWidth: 24,
+    nodePadding: 30,
+    nodeAlign: "left",
+    keepOrder: true,
+    linkColorBy: "target",
+    linkOpacity: 0.45,
+    fontSize: 12,
+    labelColor: "#222222",
+    labelBackground: true,
+    background: "#FFFFFF",
     imageScale: 2,
-    minWidth: 900,
-    minHeight: 500
+    nodes: {}
   };
 
   // ---------- Dane przykładowe (Apple FY22) ----------
-  const LINKS_SAMPLE = [
-    ["Source", "Target", "Value", "Color"],
-    ["iPhone", "Products", 205.5, ""],
-    ["Mac", "Products", 40.2, ""],
-    ["iPad", "Products", 29.3, ""],
-    ["Wearables", "Products", 41.2, ""],
-    ["Products", "Revenue", 316.2, ""],
-    ["Services", "Revenue", 78.2, ""],
-    ["Revenue", "Gross profit", 170.9, ""],
-    ["Revenue", "Cost of revenue", 223.5, ""],
-    ["Gross profit", "Operating profit", 119.5, ""],
-    ["Gross profit", "Operating expenses", 51.4, ""],
-    ["Operating profit", "Net profit", 99.8, ""],
-    ["Operating profit", "Tax", 19.3, ""],
-    ["Operating profit", "Other", 0.3, ""],
-    ["Operating expenses", "R&D", 26.3, ""],
-    ["Operating expenses", "SG&A", 25.1, ""],
-    ["Cost of revenue", "Product costs", 201.4, ""],
-    ["Cost of revenue", "Service costs", 22.1, ""]
+  const SAMPLE_DATA = [
+    ["Źródło", "Cel", "Wartość"],
+    ["iPhone", "Products", 205.5],
+    ["Mac", "Products", 40.2],
+    ["iPad", "Products", 29.3],
+    ["Wearables", "Products", 41.2],
+    ["Products", "Revenue", 316.2],
+    ["Services", "Revenue", 78.2],
+    ["Revenue", "Gross profit", 170.9],
+    ["Revenue", "Cost of revenue", 223.5],
+    ["Gross profit", "Operating profit", 119.5],
+    ["Gross profit", "Operating expenses", 51.4],
+    ["Operating profit", "Net profit", 99.8],
+    ["Operating profit", "Tax", 19.3],
+    ["Operating profit", "Other", 0.3],
+    ["Operating expenses", "R&D", 26.3],
+    ["Operating expenses", "SG&A", 25.1],
+    ["Cost of revenue", "Product costs", 201.4],
+    ["Cost of revenue", "Service costs", 22.1]
   ];
-
-  const GRAY = "#6b6b6b", GREEN = "#00a800", RED = "#b30000";
-  const NODES_SAMPLE = [
-    ["Node", "Color", "Note", "Column", "DisplayValue"],
-    ["iPhone", GRAY, "7% Y/Y", "", ""],
-    ["Mac", GRAY, "14% Y/Y", "", ""],
-    ["iPad", GRAY, "-8% Y/Y", "", ""],
-    ["Wearables", GRAY, "7% Y/Y", "", ""],
-    ["Products", GRAY, "6% Y/Y", "", ""],
-    ["Services", GRAY, "14% Y/Y", 1, ""],
-    ["Revenue", GRAY, "8% Y/Y", "", 394.3],
-    ["Gross profit", GREEN, "12% Y/Y", "", ""],
-    ["Cost of revenue", RED, "5% Y/Y", "", ""],
-    ["Operating profit", GREEN, "10% Y/Y", "", ""],
-    ["Operating expenses", RED, "17% Y/Y", "", ""],
-    ["Product costs", RED, "5% Y/Y", "", ""],
-    ["Service costs", RED, "7% Y/Y", "", ""],
-    ["Net profit", GREEN, "5% Y/Y", "", ""],
-    ["Tax", RED, "33% Y/Y", "", ""],
-    ["Other", RED, "", "", ""],
-    ["R&D", RED, "20% Y/Y", "", ""],
-    ["SG&A", RED, "14% Y/Y", "", ""]
-  ];
-
-  const CONFIG_SAMPLE = [
-    ["Parameter", "Value", "Opis"],
-    ["title", "Apple FY22 Income Statement", "Tytuł wykresu (puste = brak tytułu)"],
-    ["marginTop", 70, "Margines górny w px (miejsce na tytuł; bez tytułu ok. 20)"],
-    ["marginRight", 130, "Margines prawy (etykiety ostatniej kolumny)"],
-    ["marginBottom", 30, "Margines dolny"],
-    ["marginLeft", 130, "Margines lewy (etykiety pierwszej kolumny)"],
-    ["nodeWidth", 24, "Szerokość prostokąta węzła"],
-    ["nodePadding", 36, "Minimalny odstęp pionowy między węzłami"],
-    ["nodeAlign", "left", "left | right | center | justify (kolumna Column w tabeli węzłów ma pierwszeństwo)"],
-    ["keepOrder", true, "TRUE = kolejność węzłów w kolumnie jak w tabeli węzłów, FALSE = automatyczna"],
-    ["iterations", 32, "Liczba iteracji układu (więcej = mniej krzyżowań)"],
-    ["linkOpacity", 0.45, "Przezroczystość przepływów 0-1"],
-    ["defaultNodeColor", "#6b6b6b", "Kolor węzła bez koloru w tabeli węzłów"],
-    ["background", "#ffffff", "Kolor tła"],
-    ["fontFamily", "Segoe UI, Roboto, Arial, sans-serif", "Czcionka"],
-    ["fontSize", 12, "Rozmiar czcionki etykiet"],
-    ["labelColor", "#222222", "Kolor etykiet"],
-    ["labelBackground", true, "Półprzezroczyste tło pod etykietami węzłów środkowych"],
-    ["titleSize", 24, "Rozmiar tytułu"],
-    ["titleColor", "#1f4e79", "Kolor tytułu"],
-    ["valuePrefix", "$", "Tekst przed wartością"],
-    ["valueSuffix", "B", "Tekst po wartości"],
-    ["decimals", 1, "Liczba miejsc po przecinku"],
-    ["numberLocale", "en", "en = 1,234.5 | pl = 1 234,5"],
-    ["imageScale", 2, "Rozdzielczość kopii PNG (2 = ostra na ekranach HiDPI)"],
-    ["minWidth", 900, "Poniżej tej szerokości obiektu wykres jest skalowany proporcjonalnie (razem z tekstem)"],
-    ["minHeight", 500, "Poniżej tej wysokości obiektu wykres jest skalowany proporcjonalnie"]
-  ];
+  const G = "#6B6B6B", P = "#00A800", L = "#B30000";
+  const SAMPLE_NODES = {
+    iPhone: { color: G, note: "7% Y/Y" }, Mac: { color: G, note: "14% Y/Y" }, iPad: { color: G, note: "-8% Y/Y" },
+    Wearables: { color: G, note: "7% Y/Y" }, Products: { color: G, note: "6% Y/Y" },
+    Services: { color: G, note: "14% Y/Y", column: 1 }, Revenue: { color: G, note: "8% Y/Y", display: 394.3 },
+    "Gross profit": { color: P, note: "12% Y/Y" }, "Cost of revenue": { color: L, note: "5% Y/Y" },
+    "Operating profit": { color: P, note: "10% Y/Y" }, "Operating expenses": { color: L, note: "17% Y/Y" },
+    "Product costs": { color: L, note: "5% Y/Y" }, "Service costs": { color: L, note: "7% Y/Y" },
+    "Net profit": { color: P, note: "5% Y/Y" }, Tax: { color: L, note: "33% Y/Y" }, Other: { color: L },
+    "R&D": { color: L, note: "20% Y/Y" }, "SG&A": { color: L, note: "14% Y/Y" }
+  };
+  const SAMPLE_FMT = {
+    showTitle: true, title: "Apple FY22 Income Statement", valuePrefix: "$", valueSuffix: "B",
+    numberLocale: "en", decimals: 1, nodePadding: 34, nodes: SAMPLE_NODES
+  };
 
   // ---------- Stan ----------
   let inExcel = false;
-  let tables = Object.assign({}, DEFAULT_TABLES);
+  let fmt = clone(DEFAULT_FMT);
+  let dataBindingId = null;
+  let nodesBindingId = null;
   let handlers = [];
-  let cache = null; // { graph, cfg, unknown }
+  let model = null; // { graph, depth, skipped, address, nodesAddress }
   let lastSvg = null;
-  let changeTimer = null;
-  let resizeTimer = null;
+  let changeTimer = null, resizeTimer = null, saveTimer = null, drawTimer = null;
+  let selectedNode = null;
 
   const $ = (id) => document.getElementById(id);
 
   Office.onReady((info) => {
-    inExcel = info && info.host === Office.HostType.Excel;
+    inExcel = !!(info && info.host === Office.HostType.Excel);
     wireUi();
     if (!inExcel) {
-      // Otwarte w zwykłej przeglądarce: pokaż demo, żeby sprawdzić, że hosting działa.
+      // Otwarte w zwykłej przeglądarce: demo, żeby sprawdzić, że hosting działa
       $("btn-copy").hidden = true;
-      $("btn-settings").hidden = true;
-      cache = prepare(rowsToObjects(LINKS_SAMPLE), rowsToObjects(NODES_SAMPLE), rowsToObjects(CONFIG_SAMPLE));
+      fmt = Object.assign(clone(DEFAULT_FMT), clone(SAMPLE_FMT));
+      model = buildModel(SAMPLE_DATA, null, "demo");
       draw();
-      showBanner("Strona dodatku działa. To jest podgląd demo; w Excelu wykres czyta dane z Twoich tabel.");
+      showBanner("Strona dodatku działa (wersja " + VERSION + "). To podgląd demo; w Excelu wykres czyta dane z arkusza.");
       return;
     }
     if (!Office.context.requirements.isSetSupported("ExcelApi", "1.9")) $("btn-copy").hidden = true;
-    const saved = Office.context.document.settings.get(SETTINGS_KEY);
-    if (saved && saved.links) tables = Object.assign({}, DEFAULT_TABLES, saved);
+    const s = Office.context.document.settings;
+    fmt = Object.assign(clone(DEFAULT_FMT), s.get(KEY_FMT) || {});
+    dataBindingId = s.get(KEY_DATA) || null;
+    nodesBindingId = s.get(KEY_NODES) || null;
     run(async () => {
+      if (!dataBindingId) {
+        // Pierwsze wstawienie: spróbuj wziąć dane z bieżącego zaznaczenia, jak zwykły wykres
+        const ok = await bindFromSelection("data", true);
+        if (!ok) {
+          showEmpty();
+          return;
+        }
+      }
       await refresh();
       await subscribe();
     });
   });
 
+  // ---------- UI ----------
   function wireUi() {
     $("btn-refresh").addEventListener("click", () => run(inExcel ? refresh : async () => draw()));
-    $("btn-settings").addEventListener("click", () => run(openSettings, true));
+    $("btn-data").addEventListener("click", () => run(useSelectionClicked));
+    $("btn-format").addEventListener("click", () => togglePane());
     $("btn-copy").addEventListener("click", () => run(insertPngCopy, true));
-    $("btn-save").addEventListener("click", () => run(saveSettings));
-    $("btn-cancel").addEventListener("click", () => ($("settings").hidden = true));
-    $("btn-sample").addEventListener("click", () => run(createSample));
+    $("pane-close").addEventListener("click", () => togglePane(false));
+    $("empty-use").addEventListener("click", () => run(useSelectionClicked));
+    $("empty-sample").addEventListener("click", () => run(insertSample));
+
+    const pane = $("pane");
+    pane.addEventListener("input", onPaneInput);
+    pane.addEventListener("change", onPaneInput);
+    pane.addEventListener("click", onPaneClick);
+
     new ResizeObserver(() => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => run(async () => draw()), 120);
+      resizeTimer = setTimeout(() => run(async () => draw()), 100);
     }).observe($("chart"));
   }
 
-  // ---------- Odczyt danych z Excela ----------
-  async function readTable(ctx, name) {
-    if (!name) return null;
-    const table = ctx.workbook.tables.getItemOrNullObject(name);
-    await ctx.sync();
-    if (table.isNullObject) return null;
-    const header = table.getHeaderRowRange().load("values");
-    const body = table.getDataBodyRange().load("values");
-    await ctx.sync();
-    return rowsToObjects([header.values[0]].concat(body.values));
+  function togglePane(force) {
+    const open = typeof force === "boolean" ? force : document.body.classList.contains("pane-open") === false;
+    document.body.classList.toggle("pane-open", open);
+    if (open) renderPane();
+    else if (selectedNode) {
+      selectedNode = null;
+      scheduleDraw();
+    }
   }
 
-  function rowsToObjects(rows) {
-    const cols = rows[0].map((h) => String(h).trim().toLowerCase());
-    return rows.slice(1).map((row) => {
-      const o = {};
-      cols.forEach((c, i) => (o[c] = row[i]));
-      return o;
+  function showEmpty() {
+    model = null;
+    clearChart();
+    $("empty").hidden = false;
+    $("empty-use").hidden = !inExcel;
+    $("empty-sample").hidden = !inExcel;
+  }
+
+  // ---------- Powiązanie z danymi (jak zakres danych wykresu) ----------
+  async function useSelectionClicked() {
+    const ok = await bindFromSelection("data", false);
+    if (!ok) throw new Error("Zaznacz w arkuszu zakres z danymi (Źródło, Cel, Wartość) i kliknij ponownie.");
+    selectedNode = null;
+    await refresh();
+    await subscribe();
+    if (document.body.classList.contains("pane-open")) renderPane();
+    showBanner("Wykres korzysta teraz z zakresu " + (model ? model.address : "") + ".");
+  }
+
+  // kind: "data" | "nodes". silent = true: bez błędu, gdy zaznaczenie nie wygląda na dane
+  async function bindFromSelection(kind, silent) {
+    try {
+      return await bindFromSelectionInner(kind, silent);
+    } catch (e) {
+      if (silent) return false;
+      throw e;
+    }
+  }
+
+  async function bindFromSelectionInner(kind, silent) {
+    let newId = null;
+    await Excel.run(async (ctx) => {
+      let range = ctx.workbook.getSelectedRange();
+      range.load("address,rowCount,columnCount");
+      await ctx.sync();
+
+      let tableName = null;
+      if (Office.context.requirements.isSetSupported("ExcelApi", "1.9")) {
+        const tables = range.getTables(false);
+        tables.load("items/name");
+        await ctx.sync();
+        if (tables.items.length) tableName = tables.items[0].name;
+      }
+      if (!tableName && range.rowCount * range.columnCount === 1) {
+        // Jedna komórka: weź otaczający blok danych (jak Excel przy wstawianiu wykresu)
+        if (Office.context.requirements.isSetSupported("ExcelApi", "1.13")) {
+          range = range.getSurroundingRegion();
+          range.load("address,rowCount,columnCount");
+          await ctx.sync();
+        }
+      }
+      if (!tableName && (range.columnCount < (kind === "data" ? 3 : 2) || range.rowCount < 2)) {
+        if (silent) return;
+        throw new Error(
+          kind === "data"
+            ? "Zakres musi mieć co najmniej 3 kolumny (Źródło, Cel, Wartość) i 2 wiersze."
+            : "Zakres węzłów musi mieć co najmniej 2 kolumny (Węzeł, Kolor/Dopisek...)."
+        );
+      }
+
+      const oldId = kind === "data" ? dataBindingId : nodesBindingId;
+      if (oldId) {
+        const old = ctx.workbook.bindings.getItemOrNullObject(oldId);
+        await ctx.sync();
+        if (!old.isNullObject) old.delete();
+      }
+      newId = "sankey-" + kind + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      if (tableName) ctx.workbook.bindings.addFromNamedItem(tableName, Excel.BindingType.table, newId);
+      else ctx.workbook.bindings.add(range, Excel.BindingType.range, newId);
+      await ctx.sync();
     });
+    if (!newId) return false;
+    if (kind === "data") dataBindingId = newId;
+    else nodesBindingId = newId;
+    $("empty").hidden = true;
+    saveSettings(true);
+    return true;
+  }
+
+  async function unbindNodes() {
+    if (!nodesBindingId) return;
+    const id = nodesBindingId;
+    nodesBindingId = null;
+    saveSettings(true);
+    await Excel.run(async (ctx) => {
+      const b = ctx.workbook.bindings.getItemOrNullObject(id);
+      await ctx.sync();
+      if (!b.isNullObject) b.delete();
+      await ctx.sync();
+    });
+    await refresh();
+    await subscribe();
+  }
+
+  async function readBinding(ctx, id) {
+    if (!id) return null;
+    const b = ctx.workbook.bindings.getItemOrNullObject(id);
+    b.load("type");
+    await ctx.sync();
+    if (b.isNullObject) return null;
+    const range = b.type === "Table" ? b.getTable().getRange() : b.getRange();
+    range.load("values,address");
+    await ctx.sync();
+    return { values: range.values, address: range.address };
   }
 
   async function refresh() {
+    let data = null, nodes = null;
     await Excel.run(async (ctx) => {
-      const linkRows = await readTable(ctx, tables.links);
-      if (!linkRows) {
-        cache = null;
-        clearChart();
-        showMessage(
-          "Nie znaleziono tabeli przepływów <b>" + esc(tables.links) + "</b>.",
-          "Utwórz dane przykładowe albo wskaż własne tabele w ustawieniach.",
-          true
-        );
-        return;
-      }
-      const nodeRows = (await readTable(ctx, tables.nodes)) || [];
-      const confRows = (await readTable(ctx, tables.config)) || [];
-      cache = prepare(linkRows, nodeRows, confRows);
+      data = await readBinding(ctx, dataBindingId);
+      nodes = await readBinding(ctx, nodesBindingId);
     });
-    if (cache) draw();
+    if (!data) {
+      showEmpty();
+      return;
+    }
+    $("empty").hidden = true;
+    model = buildModel(data.values, nodes ? nodes.values : null, data.address, nodes ? nodes.address : null);
+    draw();
+    if (document.body.classList.contains("pane-open")) renderPane();
+    if (model.skipped) showBanner("Pominięto wiersze bez liczby w kolumnie Wartość: " + model.skipped + ".");
   }
 
-  function prepare(linkRows, nodeRows, confRows) {
-    const parsed = parseConfig(confRows);
-    const graph = buildGraph(linkRows, nodeRows);
-    if (!graph.links.length) throw new Error("Tabela przepływów nie zawiera wierszy z wartością > 0.");
-    return { graph: graph, cfg: parsed.cfg, unknown: parsed.unknown };
-  }
-
-  // Nasłuch zmian w tabelach: każda edycja odświeża wykres
   async function subscribe() {
     for (const h of handlers) {
       try {
@@ -215,27 +286,86 @@
           await ctx.sync();
         });
       } catch (e) {
-        /* tabela mogła zniknąć */
+        /* powiązanie mogło zniknąć */
       }
     }
     handlers = [];
+    const ids = [dataBindingId, nodesBindingId].filter(Boolean);
+    if (!ids.length) return;
     await Excel.run(async (ctx) => {
-      const names = [tables.links, tables.nodes, tables.config].filter(Boolean);
-      const items = names.map((n) => ctx.workbook.tables.getItemOrNullObject(n));
+      const items = ids.map((id) => ctx.workbook.bindings.getItemOrNullObject(id));
       await ctx.sync();
-      items.forEach((t) => {
-        if (!t.isNullObject) handlers.push(t.onChanged.add(onTableChanged));
+      items.forEach((b) => {
+        if (!b.isNullObject) handlers.push(b.onDataChanged.add(onDataChanged));
       });
       await ctx.sync();
     });
   }
 
-  async function onTableChanged() {
+  async function onDataChanged() {
     clearTimeout(changeTimer);
-    changeTimer = setTimeout(() => run(refresh), 400);
+    changeTimer = setTimeout(() => run(refresh), 300);
   }
 
-  // ---------- Parsowanie ----------
+  function saveSettings(now) {
+    if (!inExcel) return;
+    clearTimeout(saveTimer);
+    const doSave = () => {
+      const s = Office.context.document.settings;
+      s.set(KEY_FMT, fmt);
+      if (dataBindingId) s.set(KEY_DATA, dataBindingId);
+      else s.remove(KEY_DATA);
+      if (nodesBindingId) s.set(KEY_NODES, nodesBindingId);
+      else s.remove(KEY_NODES);
+      s.saveAsync(() => {});
+    };
+    if (now) doSave();
+    else saveTimer = setTimeout(doSave, 600);
+  }
+
+  // ---------- Dane przykładowe ----------
+  async function insertSample() {
+    let tableName = null, sheetName = null;
+    await Excel.run(async (ctx) => {
+      let suffix = "";
+      for (let i = 1; i < 50; i++) {
+        suffix = i === 1 ? "" : " " + i;
+        const ws = ctx.workbook.worksheets.getItemOrNullObject("Sankey dane" + suffix);
+        const t = ctx.workbook.tables.getItemOrNullObject("SankeyDane" + suffix.trim());
+        await ctx.sync();
+        if (ws.isNullObject && t.isNullObject) break;
+      }
+      sheetName = "Sankey dane" + suffix;
+      tableName = "SankeyDane" + suffix.trim();
+      const sheet = ctx.workbook.worksheets.add(sheetName);
+      const range = sheet.getRange("A1").getResizedRange(SAMPLE_DATA.length - 1, SAMPLE_DATA[0].length - 1);
+      range.values = SAMPLE_DATA;
+      const table = sheet.tables.add(range, true);
+      table.name = tableName;
+      table.style = "TableStyleLight9";
+      sheet.getRange("C2:C" + SAMPLE_DATA.length).numberFormat = SAMPLE_DATA.slice(1).map(() => ["0.0"]);
+      sheet.getRange("A:C").format.autofitColumns();
+      await ctx.sync();
+
+      if (dataBindingId) {
+        const old = ctx.workbook.bindings.getItemOrNullObject(dataBindingId);
+        await ctx.sync();
+        if (!old.isNullObject) old.delete();
+      }
+      dataBindingId = "sankey-data-" + Date.now().toString(36);
+      ctx.workbook.bindings.addFromNamedItem(tableName, Excel.BindingType.table, dataBindingId);
+      await ctx.sync();
+    });
+    fmt = Object.assign(clone(DEFAULT_FMT), clone(SAMPLE_FMT));
+    selectedNode = null;
+    saveSettings(true);
+    $("empty").hidden = true;
+    await refresh();
+    await subscribe();
+    showBanner("Dane przykładowe są w tabeli na arkuszu „" + sheetName + "”. Zmieniaj je, a wykres odświeży się sam.");
+  }
+
+  // ---------- Model ----------
   function str(x) {
     return x === null || x === undefined ? "" : String(x).trim();
   }
@@ -246,74 +376,136 @@
     return isNaN(v) ? null : v;
   }
 
-  function parseConfig(rows) {
-    const cfg = Object.assign({}, DEFAULTS);
-    const unknown = [];
-    const keys = Object.keys(DEFAULTS);
-    (rows || []).forEach((r) => {
-      const key = str(r.parameter);
-      if (!key) return;
-      const match = keys.filter((k) => k.toLowerCase() === key.toLowerCase())[0];
-      if (!match) {
-        unknown.push(key);
+  function norm(s) {
+    return str(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace("ł", "l");
+  }
+
+  // Nagłówek rozpoznawany po tekście w kolumnie wartości; kolumny po nazwach (PL/EN) albo po kolejności
+  function readColumns(values, spec) {
+    if (!values || !values.length) return { rows: [], header: false };
+    const first = values[0];
+    const known = [];
+    Object.keys(spec.cols).forEach((k) => known.push.apply(known, spec.cols[k].names));
+    const firstNorm = first.map(norm);
+    const valueCell = spec.numericCol < first.length ? first[spec.numericCol] : null;
+    const header =
+      firstNorm.some((h) => known.indexOf(h) >= 0) ||
+      (valueCell !== null && num(valueCell) === null && str(valueCell) !== "");
+    const names = header ? firstNorm : [];
+    const idx = {};
+    Object.keys(spec.cols).forEach((key) => {
+      const def = spec.cols[key];
+      let i = header ? names.findIndex((h) => def.names.indexOf(h) >= 0) : -1;
+      if (i < 0) i = def.pos < first.length ? def.pos : -1;
+      idx[key] = i;
+    });
+    const rows = values.slice(header ? 1 : 0).map((r) => {
+      const o = {};
+      Object.keys(idx).forEach((k) => (o[k] = idx[k] >= 0 ? r[idx[k]] : ""));
+      return o;
+    });
+    return { rows: rows, header: header };
+  }
+
+  const DATA_SPEC = {
+    numericCol: 2,
+    cols: {
+      source: { pos: 0, names: ["source", "zrodlo", "from", "od", "z", "skad"] },
+      target: { pos: 1, names: ["target", "cel", "to", "do", "dokad"] },
+      value: { pos: 2, names: ["value", "wartosc", "amount", "kwota", "suma"] },
+      color: { pos: 3, names: ["color", "kolor", "colour"] }
+    }
+  };
+  const NODE_SPEC = {
+    numericCol: 99,
+    cols: {
+      node: { pos: 0, names: ["node", "wezel", "nazwa", "name"] },
+      color: { pos: 1, names: ["color", "kolor", "colour"] },
+      note: { pos: 2, names: ["note", "dopisek", "opis", "notatka", "label"] },
+      column: { pos: 3, names: ["column", "kolumna"] },
+      display: { pos: 4, names: ["displayvalue", "display", "wartosc wyswietlana", "wyswietlana"] }
+    }
+  };
+
+  function buildModel(dataValues, nodeValues, address, nodesAddress) {
+    const parsed = readColumns(dataValues, DATA_SPEC);
+    const order = [];
+    const seen = new Set();
+    const links = [];
+    let skipped = 0;
+    parsed.rows.forEach((r) => {
+      const s = str(r.source), t = str(r.target), v = num(r.value);
+      if (!s && !t && str(r.value) === "") return; // pusty wiersz
+      if (!s || !t || v === null) {
+        skipped++;
         return;
       }
-      const def = DEFAULTS[match];
-      let v = r.value;
-      if (typeof def === "number") {
-        v = num(v);
-        if (v === null) return;
-      } else if (typeof def === "boolean") {
-        v = v === true || v === 1 || ["TRUE", "PRAWDA", "1", "TAK", "YES"].indexOf(str(v).toUpperCase()) >= 0;
-      } else {
-        v = str(v);
-      }
-      cfg[match] = v;
-    });
-    return { cfg: cfg, unknown: unknown };
-  }
-
-  function buildGraph(linkRows, nodeRows) {
-    const meta = new Map();
-    const order = [];
-    (nodeRows || []).forEach((r) => {
-      const name = str(r.node);
-      if (!name || meta.has(name)) return;
-      meta.set(name, { color: str(r.color), note: str(r.note), column: num(r.column), display: num(r.displayvalue) });
-      order.push(name);
-    });
-    const links = [];
-    const used = new Set();
-    linkRows.forEach((r) => {
-      const s = str(r.source), t = str(r.target), v = num(r.value);
-      if (!s || !t || v === null || v <= 0) return;
-      links.push({ source: s, target: t, value: v, color: str(r.color) });
-      used.add(s);
-      used.add(t);
-    });
-    links.forEach((l) =>
-      [l.source, l.target].forEach((n) => {
-        if (!meta.has(n)) {
-          meta.set(n, { color: "", note: "", column: null, display: null });
+      if (v <= 0) return;
+      [s, t].forEach((n) => {
+        if (!seen.has(n)) {
+          seen.add(n);
           order.push(n);
         }
-      })
-    );
-    const nodes = order.filter((n) => used.has(n)).map((n) => Object.assign({ name: n }, meta.get(n)));
-    return { nodes: nodes, links: links };
+      });
+      links.push({ source: s, target: t, value: v, color: str(r.color) });
+    });
+
+    const sheetNodes = {};
+    if (nodeValues) {
+      readColumns(nodeValues, NODE_SPEC).rows.forEach((r) => {
+        const n = str(r.node);
+        if (!n) return;
+        sheetNodes[n] = { color: str(r.color), note: str(r.note), column: num(r.column), display: num(r.display) };
+      });
+    }
+
+    const inSum = {}, outSum = {};
+    links.forEach((l) => {
+      outSum[l.source] = (outSum[l.source] || 0) + l.value;
+      inSum[l.target] = (inSum[l.target] || 0) + l.value;
+    });
+
+    const nodes = order.map((name) => ({ name: name, value: Math.max(inSum[name] || 0, outSum[name] || 0), sheet: sheetNodes[name] || null }));
+    return { graph: { nodes: nodes, links: links }, skipped: skipped, address: address, nodesAddress: nodesAddress || null };
   }
 
-  // ---------- Rysowanie ----------
-  function cloneGraph(g) {
+  // Właściwości węzła: arkusz węzłów > panel > paleta
+  function nodeProps(node, index) {
+    const pane = fmt.nodes[node.name] || {};
+    const sh = node.sheet || {};
+    const pal = PALETTES[fmt.palette] || PALETTES.office;
+    const pick = (a, b) => (a !== null && a !== undefined && a !== "" ? a : b);
     return {
-      nodes: g.nodes.map((d) => Object.assign({}, d)),
-      links: g.links.map((d) => Object.assign({}, d))
+      color: pick(sh.color, pick(pane.color, pal[index % pal.length])),
+      note: pick(sh.note, pane.note || ""),
+      column: pick(sh.column, pick(pane.column, null)),
+      display: pick(sh.display, pick(pane.display, null))
     };
   }
 
-  function computeLayers(graph, cfg) {
+  // ---------- Rysowanie ----------
+  function clone(o) {
+    return JSON.parse(JSON.stringify(o));
+  }
+
+  function makeFormatter() {
+    const locale = fmt.numberLocale === "en"
+      ? d3.formatLocale({ decimal: ".", thousands: ",", grouping: [3], currency: ["", ""] })
+      : d3.formatLocale({ decimal: ",", thousands: " ", grouping: [3], currency: ["", ""] });
+    const f = locale.format(",." + Math.max(0, Math.min(6, Math.round(fmt.decimals))) + "f");
+    return (v) => fmt.valuePrefix + f(v) + fmt.valueSuffix;
+  }
+
+  function labelLines(node, props, f) {
+    const lines = [{ t: node.name, bold: true }];
+    if (fmt.showValues) lines.push({ t: f(props.display !== null ? props.display : node.value), bold: false });
+    if (props.note) lines.push({ t: props.note, bold: false });
+    return lines;
+  }
+
+  function computeLayers(graph, columnOverride) {
     const aligners = { left: d3.sankeyLeft, right: d3.sankeyRight, center: d3.sankeyCenter, justify: d3.sankeyJustify };
-    const base = aligners[str(cfg.nodeAlign).toLowerCase()] || d3.sankeyLeft;
+    const base = aligners[fmt.nodeAlign] || d3.sankeyLeft;
     let probe;
     try {
       probe = d3.sankey().nodeId((d) => d.name)(cloneGraph(graph));
@@ -324,54 +516,47 @@
     const n = d3.max(probe.nodes, (d) => d.depth) + 1;
     const layers = new Map();
     probe.nodes.forEach((node) => {
-      const wanted = node.column !== null && node.column !== undefined ? node.column : base(node, n);
+      const o = columnOverride[node.name];
+      const wanted = o !== null && o !== undefined ? o : base(node, n);
       layers.set(node.name, Math.max(0, Math.min(n - 1, Math.floor(wanted))));
     });
-    const usedCols = new Set(Array.from(layers.values()));
+    const used = new Set(Array.from(layers.values()));
     const empty = [];
-    for (let i = 0; i < n; i++) if (!usedCols.has(i)) empty.push(i);
-    if (empty.length) {
-      throw new Error("Puste kolumny wykresu: " + empty.join(", ") + ". Popraw wartości w kolumnie Column tabeli węzłów (numeracja od 0).");
-    }
-    return layers;
+    for (let i = 0; i < n; i++) if (!used.has(i)) empty.push(i + 1);
+    if (empty.length) throw new Error("Puste kolumny wykresu: " + empty.join(", ") + ". Popraw ustawienie „Kolumna” węzłów.");
+    return { layers: layers, depth: n, probe: probe };
+  }
+
+  function cloneGraph(g) {
+    return { nodes: g.nodes.map((d) => ({ name: d.name })), links: g.links.map((d) => Object.assign({}, d)) };
   }
 
   function draw() {
-    if (!cache) return;
+    if (!model) return;
     const box = $("chart");
     const W = Math.floor(box.clientWidth), H = Math.floor(box.clientHeight);
     if (W < 120 || H < 80) {
       clearChart();
-      showMessage("Obiekt jest za mały, żeby narysować wykres.", "Powiększ go, przeciągając za róg.", false);
       return;
     }
-    hideMessage();
-    // Mały obiekt: układ liczony w większej przestrzeni i zmniejszany proporcjonalnie, żeby etykiety się nie zlewały
-    const s = Math.min(1, W / Math.max(1, cache.cfg.minWidth), H / Math.max(1, cache.cfg.minHeight));
-    lastSvg = drawSankey(box, cache.graph, cache.cfg, W, H, W / s, H / s);
-    if (cache.unknown.length) showBanner("Nieznane parametry: " + cache.unknown.join(", "));
+    const s = Math.min(1, W / 900, H / 500);
+    try {
+      lastSvg = drawSankey(box, W, H, W / s, H / s);
+    } catch (e) {
+      lastSvg = null;
+      box.innerHTML = '<div class="chart-error"><b>Nie da się narysować wykresu</b><br>' + esc(e && e.message ? e.message : String(e)) + "</div>";
+    }
   }
 
-  // W, H: rozmiar obiektu w px; LW, LH: przestrzeń układu (viewBox)
-  function drawSankey(container, graph, cfg, W, H, LW, LH) {
-    const layers = computeLayers(graph, cfg);
-    const sankey = d3
-      .sankey()
-      .nodeId((d) => d.name)
-      .nodeAlign((node) => layers.get(node.name))
-      .nodeWidth(cfg.nodeWidth)
-      .nodePadding(cfg.nodePadding)
-      .iterations(cfg.iterations)
-      .extent([[cfg.marginLeft, cfg.marginTop], [LW - cfg.marginRight, LH - cfg.marginBottom]]);
-    if (cfg.keepOrder) sankey.nodeSort(null);
-    const laid = sankey(cloneGraph(graph));
-    const nodes = laid.nodes, links = laid.links;
-
-    const locale = str(cfg.numberLocale).toLowerCase() === "pl"
-      ? d3.formatLocale({ decimal: ",", thousands: " ", grouping: [3], currency: ["", ""] })
-      : d3.formatLocale({ decimal: ".", thousands: ",", grouping: [3], currency: ["", ""] });
-    const fmtNum = locale.format(",." + Math.max(0, Math.round(cfg.decimals)) + "f");
-    const fmt = (v) => cfg.valuePrefix + fmtNum(v) + cfg.valueSuffix;
+  function drawSankey(container, W, H, LW, LH) {
+    const graph = model.graph;
+    const f = makeFormatter();
+    const props = {};
+    graph.nodes.forEach((n, i) => (props[n.name] = nodeProps(n, i)));
+    const columnOverride = {};
+    Object.keys(props).forEach((k) => (columnOverride[k] = props[k].column));
+    const lay = computeLayers(graph, columnOverride);
+    model.depth = lay.depth;
 
     container.innerHTML = "";
     const svg = d3
@@ -380,69 +565,107 @@
       .attr("width", W)
       .attr("height", H)
       .attr("viewBox", "0 0 " + LW + " " + LH)
-      .attr("font-family", cfg.fontFamily)
-      .attr("font-size", cfg.fontSize);
+      .attr("font-family", "Segoe UI, Roboto, Arial, sans-serif")
+      .attr("font-size", fmt.fontSize);
 
-    svg.append("rect").attr("width", LW).attr("height", LH).attr("fill", cfg.background);
+    // Automatyczne marginesy: najdłuższa etykieta po lewej (źródła) i po prawej (ujścia)
+    const lh = fmt.fontSize * 1.25;
+    const meas = svg.append("text").attr("visibility", "hidden");
+    const width = (t, bold) => {
+      meas.attr("font-weight", bold ? 700 : 400).text(t);
+      return meas.node().getComputedTextLength();
+    };
+    let maxLeft = 0, maxRight = 0, maxLines = 1;
+    lay.probe.nodes.forEach((pn) => {
+      const node = graph.nodes.find((x) => x.name === pn.name);
+      const lines = labelLines(node, props[pn.name], f);
+      maxLines = Math.max(maxLines, lines.length);
+      const w = d3.max(lines, (l) => width(l.t, l.bold));
+      const isSource = pn.targetLinks.length === 0, isSink = pn.sourceLinks.length === 0;
+      if (isSource && !isSink && lay.layers.get(pn.name) === 0) maxLeft = Math.max(maxLeft, w);
+      if (isSink) maxRight = Math.max(maxRight, w);
+    });
+    meas.remove();
+    const titleH = fmt.showTitle && fmt.title ? fmt.titleSize * 1.8 : 0;
+    const vpad = (maxLines * lh) / 2 + 6;
+    const mLeft = Math.ceil(maxLeft) + 14, mRight = Math.ceil(maxRight) + 14;
 
-    if (cfg.title) {
+    const sankey = d3
+      .sankey()
+      .nodeId((d) => d.name)
+      .nodeAlign((node) => lay.layers.get(node.name))
+      .nodeWidth(fmt.nodeWidth)
+      .nodePadding(fmt.nodePadding)
+      .iterations(32)
+      .extent([[mLeft, titleH + vpad], [Math.max(mLeft + 50, LW - mRight), Math.max(titleH + vpad + 50, LH - vpad)]]);
+    if (fmt.keepOrder) sankey.nodeSort(null);
+    const laid = sankey(cloneGraph(graph));
+
+    svg.insert("rect", ":first-child").attr("width", LW).attr("height", LH).attr("fill", fmt.background);
+
+    if (titleH) {
       svg
         .append("text")
         .attr("x", LW / 2)
-        .attr("y", cfg.marginTop / 2)
+        .attr("y", titleH / 2 + 2)
         .attr("dy", "0.35em")
         .attr("text-anchor", "middle")
-        .attr("font-size", cfg.titleSize)
+        .attr("font-size", fmt.titleSize)
         .attr("font-weight", 700)
-        .attr("fill", cfg.titleColor)
-        .text(cfg.title);
+        .attr("fill", fmt.titleColor)
+        .text(fmt.title);
     }
 
-    // Przepływy: kolor z kolumny Color, a gdy pusty, kolor węzła docelowego
     svg
       .append("g")
       .attr("fill", "none")
       .selectAll("path")
-      .data(links)
+      .data(laid.links)
       .join("path")
       .attr("d", d3.sankeyLinkHorizontal())
-      .attr("stroke", (d) => d.color || d.target.color || cfg.defaultNodeColor)
-      .attr("stroke-opacity", cfg.linkOpacity)
+      .attr("stroke", (d) => d.color || props[(fmt.linkColorBy === "source" ? d.source : d.target).name].color)
+      .attr("stroke-opacity", fmt.linkOpacity)
       .attr("stroke-width", (d) => Math.max(1, d.width))
       .append("title")
-      .text((d) => d.source.name + " → " + d.target.name + ": " + fmt(d.value));
+      .text((d) => d.source.name + " → " + d.target.name + ": " + f(d.value));
 
     svg
       .append("g")
       .selectAll("rect")
-      .data(nodes)
+      .data(laid.nodes)
       .join("rect")
+      .attr("class", "node")
       .attr("x", (d) => d.x0)
       .attr("y", (d) => d.y0)
       .attr("width", (d) => d.x1 - d.x0)
       .attr("height", (d) => Math.max(1, d.y1 - d.y0))
-      .attr("fill", (d) => d.color || cfg.defaultNodeColor)
+      .attr("fill", (d) => props[d.name].color)
+      .attr("stroke", (d) => (d.name === selectedNode ? "#222" : "none"))
+      .attr("stroke-width", 2)
+      .style("cursor", "pointer")
+      .on("click", (ev, d) => {
+        selectedNode = d.name;
+        togglePane(true);
+        draw();
+      })
       .append("title")
-      .text((d) => d.name + ": " + fmt(d.display !== null && d.display !== undefined ? d.display : d.value));
+      .text((d) => d.name + ": " + f(props[d.name].display !== null ? props[d.name].display : d.value) + "\nKliknij, aby sformatować węzeł");
 
-    // Etykiety: źródła po lewej, ujścia po prawej, węzły środkowe zależnie od połowy wykresu
-    const lh = cfg.fontSize * 1.25;
     svg
       .append("g")
+      .attr("pointer-events", "none")
       .selectAll("g")
-      .data(nodes)
+      .data(laid.nodes)
       .join("g")
       .each(function (d) {
         const g = d3.select(this);
-        const isSource = d.targetLinks.length === 0;
-        const isSink = d.sourceLinks.length === 0;
+        const node = graph.nodes.find((x) => x.name === d.name);
+        const lines = labelLines(node, props[d.name], f);
+        const isSource = d.targetLinks.length === 0, isSink = d.sourceLinks.length === 0;
         const onLeft = isSink ? false : isSource ? true : d.x0 < LW / 2;
         const x = onLeft ? d.x0 - 6 : d.x1 + 6;
-        const shown = d.display !== null && d.display !== undefined ? d.display : d.value;
-        const lines = [{ t: d.name, bold: true }, { t: fmt(shown), bold: false }];
-        if (d.note) lines.push({ t: d.note, bold: false });
         const yTop = (d.y0 + d.y1) / 2 - ((lines.length - 1) * lh) / 2;
-        const text = g.append("text").attr("text-anchor", onLeft ? "end" : "start").attr("fill", cfg.labelColor);
+        const text = g.append("text").attr("text-anchor", onLeft ? "end" : "start").attr("fill", fmt.labelColor);
         lines.forEach((l, i) =>
           text
             .append("tspan")
@@ -452,7 +675,7 @@
             .attr("font-weight", l.bold ? 700 : 400)
             .text(l.t)
         );
-        if (cfg.labelBackground && !isSource && !isSink) {
+        if (fmt.labelBackground && !isSource && !isSink) {
           const bb = text.node().getBBox();
           g.insert("rect", "text")
             .attr("x", bb.x - 4)
@@ -460,7 +683,7 @@
             .attr("width", bb.width + 8)
             .attr("height", bb.height + 4)
             .attr("rx", 3)
-            .attr("fill", cfg.background)
+            .attr("fill", fmt.background)
             .attr("fill-opacity", 0.75);
         }
       });
@@ -468,9 +691,220 @@
     return svg.node();
   }
 
+  function clearChart() {
+    $("chart").innerHTML = "";
+    lastSvg = null;
+  }
+
+  function scheduleDraw() {
+    clearTimeout(drawTimer);
+    drawTimer = setTimeout(() => run(async () => draw()), 60);
+  }
+
+  // ---------- Panel formatowania ----------
+  const SECTIONS = [
+    {
+      id: "title", title: "Tytuł", fields: [
+        { key: "showTitle", label: "Pokaż tytuł", type: "check" },
+        { key: "title", label: "Tekst", type: "text" },
+        { key: "titleSize", label: "Rozmiar", type: "number", min: 8, max: 60 },
+        { key: "titleColor", label: "Kolor", type: "color" }
+      ]
+    },
+    {
+      id: "values", title: "Wartości", fields: [
+        { key: "showValues", label: "Pokaż wartości w etykietach", type: "check" },
+        { key: "valuePrefix", label: "Przed liczbą", type: "text", placeholder: "np. $" },
+        { key: "valueSuffix", label: "Po liczbie", type: "text", placeholder: "np. mln zł" },
+        { key: "decimals", label: "Miejsca po przecinku", type: "number", min: 0, max: 6 },
+        { key: "numberLocale", label: "Format liczb", type: "select", options: [["pl", "1 234,5"], ["en", "1,234.5"]] }
+      ]
+    },
+    {
+      id: "nodesStyle", title: "Węzły", fields: [
+        { key: "palette", label: "Paleta kolorów", type: "select", options: [["office", "Office"], ["office2013", "Office 2013-2022"], ["pastel", "Pastelowa"], ["mono", "Szara"]] },
+        { key: "nodeWidth", label: "Szerokość", type: "range", min: 4, max: 60, step: 1 },
+        { key: "nodePadding", label: "Odstęp między węzłami", type: "range", min: 0, max: 80, step: 1 },
+        { key: "nodeAlign", label: "Wyrównanie kolumn", type: "select", options: [["left", "Do lewej"], ["right", "Do prawej"], ["justify", "Wyjustuj"], ["center", "Do środka"]] },
+        { key: "keepOrder", label: "Kolejność jak w danych", type: "check" }
+      ]
+    },
+    {
+      id: "links", title: "Przepływy", fields: [
+        { key: "linkColorBy", label: "Kolor przepływu", type: "select", options: [["target", "jak węzeł docelowy"], ["source", "jak węzeł źródłowy"]] },
+        { key: "linkOpacity", label: "Krycie", type: "range", min: 0.1, max: 1, step: 0.05 }
+      ]
+    },
+    {
+      id: "labels", title: "Etykiety i tło", fields: [
+        { key: "fontSize", label: "Rozmiar czcionki", type: "number", min: 7, max: 32 },
+        { key: "labelColor", label: "Kolor etykiet", type: "color" },
+        { key: "labelBackground", label: "Tło pod etykietami w środku", type: "check" },
+        { key: "background", label: "Tło wykresu", type: "color" }
+      ]
+    }
+  ];
+
+  function renderPane() {
+    const openState = {};
+    $("pane-body").querySelectorAll("details").forEach((d) => (openState[d.dataset.id] = d.open));
+    const isOpen = (id, def) => (openState[id] !== undefined ? openState[id] : def);
+    let html = "";
+
+    // Dane
+    const dis = inExcel ? "" : " disabled";
+    const addr = model ? model.address : "(brak)";
+    html +=
+      '<details data-id="data"' + (isOpen("data", !model) ? " open" : "") + "><summary>Dane</summary>" +
+      '<div class="field"><span class="lbl">Zakres</span><code>' + esc(addr) + "</code></div>" +
+      '<div class="btns"><button data-act="use-data" class="primary"' + dis + '>Użyj zaznaczenia</button><button data-act="sample"' + dis + '>Dane przykładowe</button></div>' +
+      '<p class="hint">Kolumny: Źródło, Cel, Wartość i opcjonalnie Kolor (#RRGGBB) przepływu. Komórka w tabeli Excela = cała tabela, nowe wiersze dochodzą same.</p>' +
+      "</details>";
+
+    SECTIONS.forEach((sec) => {
+      html += '<details data-id="' + sec.id + '"' + (isOpen(sec.id, sec.id === "title") ? " open" : "") + "><summary>" + sec.title + "</summary>";
+      sec.fields.forEach((fd) => (html += fieldHtml(fd)));
+      html += "</details>";
+    });
+
+    // Pojedyncze węzły
+    html += '<details data-id="nodes"' + (isOpen("nodes", !!selectedNode) || selectedNode ? " open" : "") + "><summary>Pojedyncze węzły</summary>";
+    if (model) {
+      html += '<p class="hint">Kliknij węzeł na wykresie, żeby od razu tu trafić. Kolumna liczona od 1.</p>';
+      model.graph.nodes.forEach((n, i) => {
+        const p = nodeProps(n, i);
+        const pane = fmt.nodes[n.name] || {};
+        const fromSheet = n.sheet ? ' <span class="tag">z arkusza</span>' : "";
+        const cols = ['<option value="">auto</option>'];
+        for (let c = 0; c < (model.depth || 1); c++) cols.push('<option value="' + c + '"' + (pane.column === c ? " selected" : "") + ">" + (c + 1) + "</option>");
+        html +=
+          '<div class="node-row' + (n.name === selectedNode ? " selected" : "") + '" data-node="' + esc(n.name) + '">' +
+          '<div class="node-head"><input type="color" data-nkey="color" value="' + toHex(p.color) + '"><b>' + esc(n.name) + "</b>" + fromSheet + "</div>" +
+          '<div class="swatches">' + QUICK_COLORS.map((c) => '<button class="sw" data-act="swatch" data-color="' + c + '" style="background:' + c + '" title="' + c + '"></button>').join("") +
+          '<button class="sw reset" data-act="reset-color" title="Kolor z palety">↺</button></div>' +
+          '<div class="grid2">' +
+          '<label>Dopisek<input type="text" data-nkey="note" value="' + esc(pane.note || "") + '" placeholder="np. 7% r/r"></label>' +
+          '<label>Kolumna<select data-nkey="column">' + cols.join("") + "</select></label>" +
+          '<label>Wartość wyświetlana<input type="number" step="any" data-nkey="display" value="' + (pane.display !== null && pane.display !== undefined ? pane.display : "") + '" placeholder="auto"></label>' +
+          "</div></div>";
+      });
+      html += '<div class="btns"><button data-act="reset-nodes">Wyczyść ustawienia węzłów</button></div>';
+    }
+    html += "</details>";
+
+    // Zaawansowane
+    html +=
+      '<details data-id="adv"' + (isOpen("adv", false) ? " open" : "") + "><summary>Zaawansowane</summary>" +
+      '<p class="hint">Opcjonalny zakres z opisami węzłów liczonymi formułami: Węzeł | Kolor | Dopisek | Kolumna | Wartość wyświetlana. Ma pierwszeństwo przed ustawieniami powyżej.</p>' +
+      '<div class="field"><span class="lbl">Zakres węzłów</span><code>' + esc(model && model.nodesAddress ? model.nodesAddress : "(brak)") + "</code></div>" +
+      '<div class="btns"><button data-act="use-nodes"' + dis + '>Użyj zaznaczenia</button>' + (nodesBindingId ? '<button data-act="unbind-nodes">Odłącz</button>' : "") + "</div>" +
+      '<p class="hint">Wersja dodatku: ' + VERSION + "</p>" +
+      "</details>";
+
+    $("pane-body").innerHTML = html;
+    if (selectedNode) {
+      const row = $("pane-body").querySelector('.node-row.selected');
+      if (row) row.scrollIntoView({ block: "center" });
+    }
+  }
+
+  function fieldHtml(fd) {
+    const v = fmt[fd.key];
+    const id = "f-" + fd.key;
+    if (fd.type === "check")
+      return '<label class="check"><input type="checkbox" id="' + id + '" data-key="' + fd.key + '"' + (v ? " checked" : "") + "> " + fd.label + "</label>";
+    let input;
+    if (fd.type === "select")
+      input = '<select id="' + id + '" data-key="' + fd.key + '">' + fd.options.map((o) => '<option value="' + o[0] + '"' + (String(v) === o[0] ? " selected" : "") + ">" + o[1] + "</option>").join("") + "</select>";
+    else if (fd.type === "range")
+      input = '<span class="range"><input type="range" id="' + id + '" data-key="' + fd.key + '" min="' + fd.min + '" max="' + fd.max + '" step="' + fd.step + '" value="' + v + '"><output>' + v + "</output></span>";
+    else if (fd.type === "color") input = '<input type="color" id="' + id + '" data-key="' + fd.key + '" value="' + toHex(v) + '">';
+    else if (fd.type === "number") input = '<input type="number" id="' + id + '" data-key="' + fd.key + '" min="' + fd.min + '" max="' + fd.max + '" value="' + v + '">';
+    else input = '<input type="text" id="' + id + '" data-key="' + fd.key + '" value="' + esc(v) + '" placeholder="' + esc(fd.placeholder || "") + '">';
+    return '<div class="field"><label class="lbl" for="' + id + '">' + fd.label + "</label>" + input + "</div>";
+  }
+
+  function onPaneInput(ev) {
+    const el = ev.target;
+    if (el.dataset.key) {
+      const key = el.dataset.key;
+      const def = DEFAULT_FMT[key];
+      let v;
+      if (el.type === "checkbox") v = el.checked;
+      else if (typeof def === "number") {
+        v = Number(el.value);
+        if (isNaN(v)) return;
+      } else v = el.value;
+      fmt[key] = v;
+      if (el.type === "range" && el.nextElementSibling) el.nextElementSibling.textContent = el.value;
+      if (key === "title" && ev.type === "input" && v && !fmt.showTitle) {
+        fmt.showTitle = true;
+        const c = $("f-showTitle");
+        if (c) c.checked = true;
+      }
+      saveSettings(false);
+      scheduleDraw();
+      if (key === "palette" && ev.type === "change") renderPane();
+      return;
+    }
+    if (el.dataset.nkey) {
+      const row = el.closest(".node-row");
+      if (!row) return;
+      const name = row.dataset.node;
+      const k = el.dataset.nkey;
+      const entry = fmt.nodes[name] || (fmt.nodes[name] = {});
+      if (k === "color") entry.color = el.value;
+      if (k === "note") entry.note = el.value;
+      if (k === "column") entry.column = el.value === "" ? null : Number(el.value);
+      if (k === "display") entry.display = el.value === "" ? null : Number(el.value);
+      selectedNode = name;
+      saveSettings(false);
+      scheduleDraw();
+    }
+  }
+
+  function onPaneClick(ev) {
+    const btn = ev.target.closest("button");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const row = btn.closest(".node-row");
+    if (act === "use-data") run(useSelectionClicked, true);
+    if (act === "sample") run(insertSample, true);
+    if (act === "use-nodes")
+      run(async () => {
+        const ok = await bindFromSelection("nodes", false);
+        if (ok) {
+          await refresh();
+          await subscribe();
+          renderPane();
+        }
+      }, true);
+    if (act === "unbind-nodes") run(async () => { await unbindNodes(); renderPane(); }, true);
+    if ((act === "swatch" || act === "reset-color") && row) {
+      const name = row.dataset.node;
+      const entry = fmt.nodes[name] || (fmt.nodes[name] = {});
+      if (act === "swatch") entry.color = btn.dataset.color;
+      else delete entry.color;
+      selectedNode = name;
+      saveSettings(false);
+      draw();
+      renderPane();
+    }
+    if (act === "reset-nodes") {
+      fmt.nodes = {};
+      selectedNode = null;
+      saveSettings(false);
+      draw();
+      renderPane();
+    }
+  }
+
+  // ---------- Kopia jako obraz ----------
   function svgToPngBase64(svgEl, w, h, scale) {
     return new Promise((resolve, reject) => {
-      const xml = new XMLSerializer().serializeToString(svgEl);
+      const clone = svgEl.cloneNode(true);
+      clone.querySelectorAll("rect.node").forEach((r) => r.setAttribute("stroke", "none"));
+      const xml = new XMLSerializer().serializeToString(clone);
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
@@ -486,11 +920,14 @@
     });
   }
 
-  // ---------- Akcje ----------
   async function insertPngCopy() {
-    if (!lastSvg || !cache) throw new Error("Brak wykresu do skopiowania.");
+    const keep = selectedNode;
+    selectedNode = null;
+    draw();
+    selectedNode = keep;
+    if (!lastSvg) throw new Error("Brak wykresu do skopiowania.");
     const w = Number(lastSvg.getAttribute("width")), h = Number(lastSvg.getAttribute("height"));
-    const png = await svgToPngBase64(lastSvg, w, h, cache.cfg.imageScale);
+    const png = await svgToPngBase64(lastSvg, w, h, fmt.imageScale || 2);
     await Excel.run(async (ctx) => {
       const cell = ctx.workbook.getActiveCell().load("left,top");
       const ws = ctx.workbook.worksheets.getActiveWorksheet();
@@ -508,131 +945,37 @@
     showBanner("Wstawiono kopię jako obraz przy aktywnej komórce. Możesz ją skopiować np. do PowerPointa.");
   }
 
-  async function openSettings() {
-    let names = [];
-    await Excel.run(async (ctx) => {
-      const col = ctx.workbook.tables.load("items/name");
-      await ctx.sync();
-      names = col.items.map((t) => t.name).sort();
-    });
-    fillSelect($("sel-links"), names, tables.links, false);
-    fillSelect($("sel-nodes"), names, tables.nodes, true);
-    fillSelect($("sel-config"), names, tables.config, true);
-    $("settings").hidden = false;
+  // ---------- Pomocnicze ----------
+  function toHex(c) {
+    const s = str(c);
+    if (/^#[0-9a-f]{6}$/i.test(s)) return s;
+    if (/^#[0-9a-f]{3}$/i.test(s)) return "#" + s.slice(1).split("").map((x) => x + x).join("");
+    const d = d3.color(s);
+    return d ? d.formatHex() : "#6b6b6b";
   }
 
-  function fillSelect(sel, names, current, optional) {
-    sel.innerHTML = "";
-    if (optional) sel.appendChild(new Option("(brak)", ""));
-    const list = names.slice();
-    if (current && list.indexOf(current) < 0) list.unshift(current);
-    list.forEach((n) => sel.appendChild(new Option(names.indexOf(n) < 0 ? n + " (nie istnieje)" : n, n)));
-    sel.value = current || "";
-  }
-
-  async function saveSettings() {
-    const links = $("sel-links").value;
-    if (!links) throw new Error("Wybierz tabelę przepływów.");
-    await applyTables({ links: links, nodes: $("sel-nodes").value, config: $("sel-config").value });
-    $("settings").hidden = true;
-  }
-
-  async function applyTables(next) {
-    tables = next;
-    Office.context.document.settings.set(SETTINGS_KEY, tables);
-    await new Promise((resolve) => Office.context.document.settings.saveAsync(() => resolve()));
-    await refresh();
-    await subscribe();
-  }
-
-  // Tworzy arkusz z trzema tabelami przykładowymi o wolnych nazwach i podpina je do tego wykresu
-  async function createSample() {
-    let created = null;
-    await Excel.run(async (ctx) => {
-      let suffix = "";
-      for (let i = 1; i < 50; i++) {
-        suffix = i === 1 ? "" : String(i);
-        const probes = [
-          ctx.workbook.tables.getItemOrNullObject("SankeyLinks" + suffix),
-          ctx.workbook.tables.getItemOrNullObject("SankeyNodes" + suffix),
-          ctx.workbook.tables.getItemOrNullObject("SankeyConfig" + suffix),
-          ctx.workbook.worksheets.getItemOrNullObject("Sankey dane" + (suffix ? " " + suffix : ""))
-        ];
-        await ctx.sync();
-        if (probes.every((p) => p.isNullObject)) break;
-      }
-      const sheetName = "Sankey dane" + (suffix ? " " + suffix : "");
-      const sheet = ctx.workbook.worksheets.add(sheetName);
-      created = { links: "SankeyLinks" + suffix, nodes: "SankeyNodes" + suffix, config: "SankeyConfig" + suffix, sheet: sheetName };
-      addTable(sheet, "A1", created.links, LINKS_SAMPLE);
-      addTable(sheet, "F1", created.nodes, NODES_SAMPLE);
-      addTable(sheet, "L1", created.config, CONFIG_SAMPLE);
-      sheet.getRange("C2:C" + LINKS_SAMPLE.length).numberFormat = LINKS_SAMPLE.slice(1).map(() => ["0.0"]);
-      sheet.getRange("A:N").format.autofitColumns();
-      await ctx.sync();
-    });
-    $("settings").hidden = true;
-    await applyTables({ links: created.links, nodes: created.nodes, config: created.config });
-    showBanner('Dane przykładowe są w arkuszu „' + created.sheet + '”. Zmieniaj je, a wykres odświeży się sam.');
-  }
-
-  function addTable(sheet, topLeft, name, rows) {
-    const range = sheet.getRange(topLeft).getResizedRange(rows.length - 1, rows[0].length - 1);
-    range.values = rows;
-    const table = sheet.tables.add(range, true);
-    table.name = name;
-    table.style = "TableStyleLight9";
-    return table;
-  }
-
-  // ---------- UI pomocnicze ----------
-  function clearChart() {
-    $("chart").innerHTML = "";
-    lastSvg = null;
-  }
-
-  function showMessage(html, hint, withActions) {
-    $("msg-text").innerHTML = html;
-    $("msg-hint").textContent = hint || "";
-    $("msg-actions").hidden = !withActions || !inExcel;
-    $("message").hidden = false;
-  }
-
-  function hideMessage() {
-    $("message").hidden = true;
-  }
-
-  function showBanner(text) {
+  function showBanner(text, isError) {
     const b = $("banner");
     b.textContent = text;
+    b.className = isError ? "error" : "";
     b.hidden = false;
     clearTimeout(b._t);
-    b._t = setTimeout(() => (b.hidden = true), 6000);
+    b._t = setTimeout(() => (b.hidden = true), isError ? 9000 : 6000);
   }
 
   function esc(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   }
 
-  // soft = true: błąd pokazany w pasku, wykres zostaje (np. nieudane wstawienie kopii)
+  // soft = true: błąd w pasku, wykres zostaje
   async function run(fn, soft) {
     try {
       await fn();
     } catch (e) {
       console.error(e);
-      if (soft) {
-        showBanner("Błąd: " + (e && e.message ? e.message : String(e)));
-        return;
-      }
-      clearChart();
-      showMessage("Błąd: " + esc(e && e.message ? e.message : String(e)), "Sprawdź dane w tabelach albo ustawienia (⚙).", true);
+      const msg = e && e.message ? e.message : String(e);
+      showBanner("Błąd: " + msg, true);
+      if (!soft && !lastSvg && !model) showEmpty();
     }
   }
-
-  // Przyciski w komunikacie (stan pusty / błąd)
-  document.addEventListener("click", (ev) => {
-    const id = ev.target && ev.target.id;
-    if (id === "msg-sample") run(createSample);
-    if (id === "msg-settings") run(openSettings, true);
-  });
 })();
